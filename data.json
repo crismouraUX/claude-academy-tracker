@@ -1,0 +1,169 @@
+{
+  "modules": [
+    {
+      "id": "QA117", "code": "W1.17",
+      "title": "Sponsored Products — Advanced Architecture & Governance at Quartile",
+      "shortTitle": "Sponsored Products — Advanced",
+      "week": "1", "platform": "AMZ",
+      "statuses": ["Presented", "Live", "Analyzed"],
+      "instructor": { "name": "Guilherme Decimo", "role": "Senior CSM", "team": "Quartile Academy" },
+      "sessionDate": "2026-03-26", "scheduledLength": "3h", "actualLength": "2h 00m",
+      "learningObjective": "Understand how SP campaign ecosystems are architected and governed at scale inside Quartile. Master the five-layer framework (Discovery, Isolation, Scaling, Defense, Conquesting), the principles of intent isolation and signal purity, auction feedback dynamics, bid elasticity, demand saturation, retail constraints, and the governance boundary between automation and human intervention.",
+      "followUpItems": [
+        "Create a visual architecture diagram of the five-layer ecosystem for Q2 cohort distribution.",
+        "Schedule a hands-on portal session covering bulk/imported campaign governance workflows.",
+        "Identify Q1 accounts with potential Discovery campaign contamination patterns for the next case study."
+      ],
+      "overallScore": 9, "satisfactionScore": 4.9,
+      "participantBaseline": { "score": 84, "delta": 12 },
+      "participantBaselineNote": "The cohort demonstrates high technical proficiency in SP campaign architecture. Majority of students are exceeding the core KPIs set for this module.",
+      "students": [
+        { "name": "Ana Reyes", "title": "Advanced Analytics Lead", "cohort": "New Hire", "interactions": 42, "score": 9, "isTop": true, "notes": "Exceptional conceptual grasp. Immediately connected architecture principles to real account scenarios. Key questions drove the session deeper on intent isolation and conversion elasticity." },
+        { "name": "Marcus Liu", "title": "Strategic Operations", "cohort": "New Hire", "interactions": 35, "score": 8, "notes": "Strong analytical foundation. Challenged the instructor on contamination detection and prompted excellent practical examples of mixed-intent campaigns." },
+        { "name": "Priya Shankar", "title": "Marketing Science Analyst", "cohort": "New Hire", "interactions": 28, "score": 7, "notes": "Highly analytical approach. Proactively applied pre-reading to a live account this morning. Excels in data representation but needs more verbal participation in group discussions." },
+        { "name": "Jordan Cole", "title": "Junior Performance Lead", "cohort": "New Hire", "interactions": 12, "score": 5, "isBottom": true, "notes": "Engagement is significantly below average. Core concept retention appears stable but needs more active contribution. Follow up on Quartile One structural understanding." }
+      ],
+      "qaLog": [
+        { "time": "09:04", "speaker": "Ana Reyes", "text": "When you say 'degraded signals' — you mean the automation is receiving bad data to work with?", "response": "Exactly right, Ana. The automation is only as good as the structural inputs it receives. If the campaign architecture is contaminated — meaning different intent types are mixed together — the model can't interpret what's working." },
+        { "time": "09:17", "speaker": "Jordan Cole", "text": "So if a client looks at their Discovery campaign and sees a terrible ACOS, that's expected?", "response": "Correct. Short-term inefficiency in Discovery is intentional. If you go in and cut Discovery bids because the ACOS looks bad, you've just destroyed your ability to feed the next layer." },
+        { "time": "09:19", "speaker": "Marcus Liu", "text": "What does contamination look like in practice? Like what would a contaminated campaign look like?", "response": "Imagine you have a Discovery campaign running auto-targeting, and someone decides to add high-intent exact match keywords directly into it. Now you have broad discovery signals and high-intent exact match signals in the same campaign. The automation sees mixed conversion data and can't attribute cleanly." },
+        { "time": "09:23", "speaker": "Ana Reyes", "text": "Conversion elasticity — so that's the idea that more spend actually produces more results proportionally?", "response": "Proportionally is the key word. Not all spend is elastic. You can hit a ceiling where additional bids just increase impression share without increasing conversions." },
+        { "time": "09:25", "speaker": "Priya Shankar", "text": "And Conquesting is optional you said?", "response": "Optional and expensive. Conquesting requires very high bids and produces noisier signals. It's appropriate for certain strategic accounts but it needs very careful structural isolation so it doesn't destabilize your efficiency anchors." },
+        { "time": "09:45", "speaker": "Marcus Liu", "text": "How does Quartile One handle the handoff between Discovery and Isolation automatically?", "response": "The model monitors conversion signals and when a term crosses our promotion threshold — which is consistent across accounts — it automatically creates the isolated campaign structure. You don't manually move keywords; the system manages that lifecycle." },
+        { "time": "10:12", "speaker": "Ana Reyes", "text": "If bid elasticity plateaus, how do you distinguish between demand saturation and bid suppression?", "response": "Great diagnostic question. Bid suppression shows up as flat impression share with stable conversion rates. Demand saturation shows declining conversion rates even as impressions hold. They look similar in ACOS but require completely different interventions — one is a bid problem, the other is a market problem." },
+        { "time": "10:35", "speaker": "Priya Shankar", "text": "Can retail constraints affect Discovery specifically, or do they apply across all layers equally?", "response": "They apply across all layers but they're most dangerous in Scaling. If inventory drops while you're scaling, the automation starts seeing conversion drop-offs that look like signal decay — when actually it's a retail problem. Always check BSR and inventory when you see unexpected ACOS spikes in a Scaling campaign." }
+      ],
+      "contentAnalysis": {
+        "coverage": [
+          { "topic": "Five-Layer Ecosystem Architecture", "depth": 95, "status": "deep" },
+          { "topic": "Intent Isolation & Signal Purity", "depth": 90, "status": "deep" },
+          { "topic": "Quartile One vs Bulk Campaigns", "depth": 85, "status": "deep" },
+          { "topic": "Auction Feedback Loop", "depth": 75, "status": "covered" },
+          { "topic": "Bid Elasticity & Probability Expansion", "depth": 65, "status": "covered" },
+          { "topic": "Budget Logic & Demand Saturation", "depth": 55, "status": "partial" },
+          { "topic": "Retail Constraints Within Advanced Structures", "depth": 40, "status": "partial" },
+          { "topic": "Conquesting Strategy", "depth": 30, "status": "brief" }
+        ],
+        "keyInsights": [
+          "Architecture contamination is the leading cause of automation model degradation at Quartile.",
+          "Discovery campaigns must be evaluated by signal quality and keyword yield — not ACOS efficiency.",
+          "The promotion threshold in Quartile One is consistent across accounts — a structural differentiator vs bulk imports.",
+          "Bid suppression and demand saturation produce similar ACOS symptoms but require opposite interventions."
+        ],
+        "recommendations": [
+          "Schedule a dedicated retail constraints deep-dive session — currently only partially covered.",
+          "Create visual architecture diagrams — cohort responded well to spatial framing of the five layers.",
+          "Add contamination diagnostic exercise to W1.18 as a practical warm-up activity."
+        ]
+      },
+      "modifiedDate": "2026-03-26 11:15 AM", "recordingLink": "#", "slidesLink": "#"
+    },
+    {
+      "id": "QA116", "code": "W1.16",
+      "title": "Sponsored Products — Foundational Mechanics", "shortTitle": "Sponsored Products 101",
+      "week": "1", "platform": "AMZ", "statuses": ["Presented", "Analyzed"],
+      "instructor": { "name": "Guilherme Decimo", "role": "Senior CSM", "team": "Quartile Academy" },
+      "sessionDate": "2026-03-19", "scheduledLength": "3h", "actualLength": "2h 45m",
+      "learningObjective": "Understand the foundational mechanics of Amazon Sponsored Products: second-price auction dynamics, bid and attribution systems, keyword match types, and the basics of search term harvesting.",
+      "followUpItems": [
+        "Distribute auction mechanics reference card to all participants.",
+        "Schedule Q&A office hours for attribution window clarifications."
+      ],
+      "overallScore": 8, "satisfactionScore": 4.7,
+      "participantBaseline": { "score": 72, "delta": 0 },
+      "participantBaselineNote": "First module in the SP series. Cohort establishing baseline understanding of auction mechanics and attribution logic.",
+      "students": [
+        { "name": "Ana Reyes", "title": "Advanced Analytics Lead", "cohort": "New Hire", "interactions": 38, "score": 9, "isTop": true, "notes": "Strong grasp of auction mechanics from day one. Immediately connected attribution windows to reporting implications." },
+        { "name": "Marcus Liu", "title": "Strategic Operations", "cohort": "New Hire", "interactions": 30, "score": 8, "notes": "Methodical approach. Needed clarification on negative keyword cascading but resolved quickly." },
+        { "name": "Priya Shankar", "title": "Marketing Science Analyst", "cohort": "New Hire", "interactions": 25, "score": 7, "notes": "Highly engaged with data-side concepts. Attribution model analysis was her strongest contribution." },
+        { "name": "Jordan Cole", "title": "Junior Performance Lead", "cohort": "New Hire", "interactions": 15, "score": 6, "isBottom": true, "notes": "Core concepts understood. Bid mechanics section required additional reinforcement outside session." }
+      ],
+      "qaLog": [], "contentAnalysis": { "coverage": [], "keyInsights": [], "recommendations": [] },
+      "modifiedDate": "2026-03-20 09:30 AM", "recordingLink": "#", "slidesLink": "#"
+    },
+    {
+      "id": "QA115", "code": "W1.15",
+      "title": "Campaign Structure Fundamentals", "shortTitle": "Campaign Structure Fundamentals",
+      "week": "1", "platform": "AMZ", "statuses": ["Presented", "Analyzed"],
+      "instructor": { "name": "Felipe Tahara", "role": "COE", "team": "Center of Excellence" },
+      "sessionDate": "2026-03-12", "scheduledLength": "2h", "actualLength": "2h 10m",
+      "learningObjective": "Understand campaign architecture principles: naming conventions, ad group structure, budget hierarchy, and portfolio organization for Amazon advertising accounts.",
+      "followUpItems": [
+        "Share campaign naming convention template with all students.",
+        "Review portfolio structure with each student's assigned account."
+      ],
+      "overallScore": 8, "satisfactionScore": 4.6,
+      "participantBaseline": { "score": 68, "delta": 5 },
+      "participantBaselineNote": "Good foundational grasp of structure with some variation in pre-existing account knowledge across the cohort.",
+      "students": [
+        { "name": "Ana Reyes", "title": "Advanced Analytics Lead", "cohort": "New Hire", "interactions": 35, "score": 9, "isTop": true, "notes": "Already applying naming conventions to practice accounts proactively." },
+        { "name": "Marcus Liu", "title": "Strategic Operations", "cohort": "New Hire", "interactions": 28, "score": 8, "notes": "Strong structural instincts. Proposed improvements to portfolio hierarchy in group exercise." },
+        { "name": "Priya Shankar", "title": "Marketing Science Analyst", "cohort": "New Hire", "interactions": 22, "score": 7, "notes": "Thorough in structured exercises. Needs confidence to challenge assumptions more vocally." },
+        { "name": "Jordan Cole", "title": "Junior Performance Lead", "cohort": "New Hire", "interactions": 18, "score": 6, "isBottom": true, "notes": "Solid baseline. Budget hierarchy section required follow-up clarification." }
+      ],
+      "qaLog": [], "contentAnalysis": { "coverage": [], "keyInsights": [], "recommendations": [] },
+      "modifiedDate": "2026-03-13 10:00 AM", "recordingLink": "#", "slidesLink": "#"
+    },
+    {
+      "id": "QA118", "code": "W1.18",
+      "title": "Sponsored Brands — Architecture & Creative Strategy", "shortTitle": "Sponsored Brands — Advanced",
+      "week": "1", "platform": "AMZ", "statuses": ["Scheduled"],
+      "instructor": { "name": "Felipe Tahara", "role": "COE", "team": "Center of Excellence" },
+      "sessionDate": "2026-04-02", "scheduledLength": "3h", "actualLength": null,
+      "learningObjective": "Master Sponsored Brands campaign architecture, creative asset strategy, Store Spotlight campaigns, and brand ROAS optimization within Quartile.",
+      "followUpItems": [],
+      "overallScore": null, "satisfactionScore": null, "participantBaseline": null, "participantBaselineNote": null,
+      "students": [
+        { "name": "Ana Reyes", "title": "Advanced Analytics Lead", "cohort": "New Hire", "interactions": null, "score": null, "notes": "" },
+        { "name": "Marcus Liu", "title": "Strategic Operations", "cohort": "New Hire", "interactions": null, "score": null, "notes": "" },
+        { "name": "Priya Shankar", "title": "Marketing Science Analyst", "cohort": "New Hire", "interactions": null, "score": null, "notes": "" },
+        { "name": "Jordan Cole", "title": "Junior Performance Lead", "cohort": "New Hire", "interactions": null, "score": null, "notes": "" }
+      ],
+      "qaLog": [], "contentAnalysis": { "coverage": [], "keyInsights": [], "recommendations": [] },
+      "modifiedDate": "2026-03-15 09:00 AM", "recordingLink": null, "slidesLink": null
+    },
+    {
+      "id": "QA201", "code": "W2.01",
+      "title": "DSP Fundamentals — Programmatic Foundations", "shortTitle": "DSP Fundamentals",
+      "week": "2", "platform": "AMZ", "statuses": ["Scheduled"],
+      "instructor": { "name": "Mariana Costa", "role": "DSP Specialist", "team": "Quartile Academy" },
+      "sessionDate": "2026-04-09", "scheduledLength": "2h 30m", "actualLength": null,
+      "learningObjective": "Understand Amazon DSP fundamentals: audience targeting, supply path optimization, frequency capping, and the relationship between DSP and Sponsored Ads in a full-funnel strategy.",
+      "followUpItems": [],
+      "overallScore": null, "satisfactionScore": null, "participantBaseline": null, "participantBaselineNote": null,
+      "students": [],
+      "qaLog": [], "contentAnalysis": { "coverage": [], "keyInsights": [], "recommendations": [] },
+      "modifiedDate": "2026-03-10 08:00 AM", "recordingLink": null, "slidesLink": null
+    },
+    {
+      "id": "QA119", "code": "W1.19",
+      "title": "Attribution & Measurement — Full-Funnel Analysis", "shortTitle": "Attribution & Measurement",
+      "week": "1", "platform": "AMZ", "statuses": ["Live"],
+      "instructor": { "name": "Guilherme Decimo", "role": "Senior CSM", "team": "Quartile Academy" },
+      "sessionDate": "2026-04-22", "scheduledLength": "2h 30m", "actualLength": null,
+      "learningObjective": "Master Amazon attribution models: 7-day vs 14-day windows, same-day attribution, new-to-brand metrics, and TACOS/ACOS correlation analysis within Quartile reporting.",
+      "followUpItems": [],
+      "overallScore": null, "satisfactionScore": null, "participantBaseline": null, "participantBaselineNote": null,
+      "students": [],
+      "qaLog": [], "contentAnalysis": { "coverage": [], "keyInsights": [], "recommendations": [] },
+      "modifiedDate": "2026-03-20 11:00 AM", "recordingLink": null, "slidesLink": null
+    }
+  ],
+  "instructors": [
+    { "name": "Guilherme Decimo", "role": "Senior CSM", "team": "Quartile Academy", "color": "#FF6E13" },
+    { "name": "Felipe Tahara", "role": "COE", "team": "Center of Excellence", "color": "#1C1C1A" },
+    { "name": "Mariana Costa", "role": "DSP Specialist", "team": "Quartile Academy", "color": "#594137" }
+  ],
+  "studentsBase": [
+    { "name": "Ana Reyes", "title": "Advanced Analytics Lead", "cohort": "Q2-2026", "totalInteractions": 115, "avgScore": 8.7, "status": "Exceeding" },
+    { "name": "Marcus Liu", "title": "Strategic Operations", "cohort": "Q2-2026", "totalInteractions": 93, "avgScore": 8.0, "status": "On Track" },
+    { "name": "Priya Shankar", "title": "Marketing Science Analyst", "cohort": "Q2-2026", "totalInteractions": 75, "avgScore": 7.3, "status": "On Track" },
+    { "name": "Jordan Cole", "title": "Junior Performance Lead", "cohort": "Q2-2026", "totalInteractions": 45, "avgScore": 5.7, "status": "At Risk" }
+  ],
+  "weekly": [
+    { "label": "Week 01", "pct": 100 },
+    { "label": "Week 02", "pct": 82 },
+    { "label": "Week 03", "pct": 64 },
+    { "label": "Week 04", "pct": 41 }
+  ]
+}
