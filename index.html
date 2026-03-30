@@ -1,0 +1,1282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quartile Academy Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            qo: '#FF6E13', qcream: '#FCF9F6', qside: '#E2E2E0',
+            qdark: '#1C1C1A', qbrown: '#594137', qcard: '#F6F3F1',
+            qcard2: '#F0EDEB', qgreen: '#71E002', qgray: '#B2B2B2',
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui,-apple-system,sans-serif; background: #FCF9F6; }
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: #F6F3F1; }
+    ::-webkit-scrollbar-thumb { background: #C8C4C0; border-radius: 2px; }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+    @keyframes slideIn { from { opacity:0; transform:translateX(10px); } to { opacity:1; transform:translateX(0); } }
+    @keyframes toastIn { from { opacity:0; transform:translateY(12px) scale(.96); } to { opacity:1; transform:translateY(0) scale(1); } }
+    @keyframes toastOut { from { opacity:1; } to { opacity:0; transform:translateY(8px); } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .fade-up { animation: fadeUp .22s ease-out; }
+    .fade-in { animation: fadeIn .18s ease-out; }
+    .slide-in { animation: slideIn .18s ease-out; }
+    .toast-in { animation: toastIn .22s ease-out; }
+    .toast-out { animation: toastOut .2s ease-out forwards; }
+    .bar-fill { transition: width .7s cubic-bezier(.4,0,.2,1); }
+    .spin { animation: spin .8s linear infinite; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+// ─── GITHUB CONFIG ────────────────────────────────────────────────────────────
+// Repo config — token is stored in localStorage (never hardcoded)
+const GH_REPO = {
+  owner: 'crismouraUX',
+  repo:  'claude-academy-tracker',
+  path:  'data.json',
+};
+const LS_TOKEN_KEY = 'qa_tracker_gh_token';
+const getGH = () => ({ ...GH_REPO, token: localStorage.getItem(LS_TOKEN_KEY) || '' });
+
+function b64Encode(str) {
+  return btoa(String.fromCodePoint(...new TextEncoder().encode(str)));
+}
+function b64Decode(str) {
+  return new TextDecoder().decode(new Uint8Array(
+    Array.from(atob(str.replace(/\n/g, '')), c => c.charCodeAt(0))
+  ));
+}
+
+async function ghLoad() {
+  const gh = getGH();
+  if (!gh.token) return null;
+  const res = await fetch(
+    `https://api.github.com/repos/${gh.owner}/${gh.repo}/contents/${gh.path}`,
+    { headers: { Authorization: `token ${gh.token}`, Accept: 'application/vnd.github.v3+json' } }
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`GitHub load failed: ${res.status}`);
+  const d = await res.json();
+  return { data: JSON.parse(b64Decode(d.content)), sha: d.sha };
+}
+
+async function ghSave(data, sha) {
+  const gh = getGH();
+  if (!gh.token) throw new Error('No GitHub token configured');
+  const body = {
+    message: `Update academy tracker data — ${new Date().toISOString()}`,
+    content: b64Encode(JSON.stringify(data, null, 2)),
+  };
+  if (sha) body.sha = sha;
+  const res = await fetch(
+    `https://api.github.com/repos/${gh.owner}/${gh.repo}/contents/${gh.path}`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `token ${gh.token}`,
+        Accept: 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    }
+  );
+  if (!res.ok) throw new Error(`GitHub save failed: ${res.status}`);
+  const d = await res.json();
+  return d.content.sha;
+}
+
+// ─── DEFAULT DATA (fallback if GitHub unreachable) ────────────────────────────
+const DEFAULT_INSTRUCTORS = [
+  { name:'Guilherme Decimo', role:'Senior CSM', team:'Quartile Academy', color:'#FF6E13' },
+  { name:'Felipe Tahara', role:'COE', team:'Center of Excellence', color:'#1C1C1A' },
+  { name:'Mariana Costa', role:'DSP Specialist', team:'Quartile Academy', color:'#594137' },
+];
+const DEFAULT_STUDENTS = [
+  { name:'Ana Reyes', title:'Advanced Analytics Lead', cohort:'Q2-2026', totalInteractions:115, avgScore:8.7, status:'Exceeding' },
+  { name:'Marcus Liu', title:'Strategic Operations', cohort:'Q2-2026', totalInteractions:93, avgScore:8.0, status:'On Track' },
+  { name:'Priya Shankar', title:'Marketing Science Analyst', cohort:'Q2-2026', totalInteractions:75, avgScore:7.3, status:'On Track' },
+  { name:'Jordan Cole', title:'Junior Performance Lead', cohort:'Q2-2026', totalInteractions:45, avgScore:5.7, status:'At Risk' },
+];
+const DEFAULT_WEEKLY = [
+  { label:'Week 01', pct:100 }, { label:'Week 02', pct:82 },
+  { label:'Week 03', pct:64 },  { label:'Week 04', pct:41 },
+];
+
+// ─── ICONS ────────────────────────────────────────────────────────────────────
+const Ic = ({ c, s=16, cls='' }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={cls}>{c}</svg>
+);
+const IcDash   = p => <Ic s={p.s} c={<><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></>}/>;
+const IcMod    = p => <Ic s={p.s} c={<><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></>}/>;
+const IcUser   = p => <Ic s={p.s} c={<><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>}/>;
+const IcUsers  = p => <Ic s={p.s} c={<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>}/>;
+const IcCal    = p => <Ic s={p.s} c={<><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></>}/>;
+const IcBell   = p => <Ic s={p.s} c={<><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></>}/>;
+const IcGear   = p => <Ic s={p.s} c={<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>}/>;
+const IcX      = p => <Ic s={p.s} c={<><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>}/>;
+const IcChevR  = p => <Ic s={p.s} c={<polyline points="9 18 15 12 9 6"/>}/>;
+const IcSearch = p => <Ic s={p.s} c={<><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>}/>;
+const IcUpload = p => <Ic s={p.s} c={<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></>}/>;
+const IcPlay   = p => <Ic s={p.s} c={<polygon points="5 3 19 12 5 21 5 3"/>}/>;
+const IcLink   = p => <Ic s={p.s} c={<><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></>}/>;
+const IcClock  = p => <Ic s={p.s} c={<><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>}/>;
+const IcLogout = p => <Ic s={p.s} c={<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>}/>;
+const IcFile   = p => <Ic s={p.s} c={<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></>}/>;
+const IcBar    = p => <Ic s={p.s} c={<><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></>}/>;
+const IcCheck  = p => <Ic s={p.s} c={<polyline points="20 6 9 17 4 12"/>}/>;
+const IcPhone  = p => <Ic s={p.s} c={<><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.41 2 2 0 0 1 3.6 1.26h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.84a16 16 0 0 0 6.29 6.29l.61-.61a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21.73 17z"/></>}/>;
+const IcSave   = p => <Ic s={p.s} c={<><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></>}/>;
+const IcRefresh= p => <Ic s={p.s} c={<><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></>}/>;
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+const initials = n => n.split(' ').map(w=>w[0]).join('');
+
+const Avatar = ({ name, color='#FF6E13', size=40 }) => (
+  <div style={{ width:size, height:size, background:color+'18', border:`2px solid ${color}44`,
+    borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+    <span style={{ fontSize:size*.32, fontWeight:700, color, letterSpacing:'-.02em' }}>{initials(name)}</span>
+  </div>
+);
+
+const statusCls = s => {
+  if (s==='Analyzed'||s==='Presented') return 'bg-[#71E002] text-[#1C1C1A]';
+  if (s==='Live') return 'bg-[#FF6E13] text-white';
+  return 'bg-[#E5E2E0] text-[#1C1C1A]';
+};
+
+const scoreCls = n => {
+  if (!n) return 'bg-[#E5E2E0] text-[#1C1C1A]';
+  if (n>=8) return 'bg-[#FF6E13] text-white';
+  if (n>=6) return 'bg-[#E5E2E0] text-[#1C1C1A]';
+  return 'bg-[#FFDAD6] text-[#93000A]';
+};
+
+const Badge = ({ label }) => (
+  <span className={`${statusCls(label)} text-[10px] font-bold px-3 py-1.5 rounded-full whitespace-nowrap`}>{label}</span>
+);
+
+// ─── TOAST ────────────────────────────────────────────────────────────────────
+function Toast({ msg, onDone }) {
+  const [leaving, setLeaving] = useState(false);
+  useEffect(() => {
+    const t1 = setTimeout(()=>setLeaving(true), 3200);
+    const t2 = setTimeout(()=>onDone(), 3600);
+    return ()=>{ clearTimeout(t1); clearTimeout(t2); };
+  }, []);
+  return (
+    <div className={`fixed bottom-8 right-8 z-[100] flex items-center gap-3 bg-[#1C1C1A] text-white px-5 py-4 shadow-2xl ${leaving?'toast-out':'toast-in'}`}
+      style={{ borderLeft:'3px solid #71E002', minWidth:280 }}>
+      <div className="w-5 h-5 rounded-full bg-[#71E002] flex items-center justify-center flex-shrink-0"><IcCheck s={11}/></div>
+      <span className="text-sm">{msg}</span>
+    </div>
+  );
+}
+
+// ─── SETTINGS MODAL ───────────────────────────────────────────────────────────
+function SettingsModal({ onClose, onSaved }) {
+  const [token, setToken] = useState(localStorage.getItem(LS_TOKEN_KEY) || '');
+  const save = () => {
+    localStorage.setItem(LS_TOKEN_KEY, token.trim());
+    onSaved();
+    onClose();
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center fade-in"
+      style={{ background:'rgba(28,28,26,.6)', backdropFilter:'blur(4px)' }} onClick={onClose}>
+      <div className="bg-[#FCF9F6] shadow-2xl fade-up" style={{ width:480 }} onClick={e=>e.stopPropagation()}>
+        <div className="bg-[#EFEFEF] px-8 py-4 flex items-center justify-between">
+          <div>
+            <div className="text-[#FF6E13] text-[10px] font-bold tracking-widest uppercase">GitHub Sync</div>
+            <div className="text-[#1C1C1A] text-lg font-bold mt-0.5">Settings</div>
+          </div>
+          <button onClick={onClose} className="text-[#594137] hover:text-[#1C1C1A] transition-colors"><IcX s={18}/></button>
+        </div>
+        <div className="p-8">
+          <div className="bg-[#F0EDEB] p-4 mb-6 text-xs text-[#594137] leading-relaxed">
+            <span className="font-bold">Repository:</span> {GH_REPO.owner}/{GH_REPO.repo} — {GH_REPO.path}<br/>
+            Data is loaded from and saved to this GitHub repo. Your token is stored only in your browser's localStorage.
+          </div>
+          <label className="text-[10px] font-bold text-[#1C1C1A] block mb-2 tracking-widest uppercase">
+            GitHub Personal Access Token
+          </label>
+          <input type="password" value={token} onChange={e=>setToken(e.target.value)}
+            placeholder="ghp_..."
+            className="w-full bg-[#F6F3F1] border border-[#E5E2E0] px-4 py-2.5 text-sm text-[#1C1C1A] outline-none focus:border-[#FF6E13] transition-colors mb-1"/>
+          <p className="text-[#B2B2B2] text-[10px] mb-6">Needs <code>repo</code> scope. Stored in localStorage, never sent anywhere except GitHub API.</p>
+          <div className="flex gap-3">
+            <button onClick={save}
+              className="flex-1 bg-[#FF6E13] text-white text-xs font-bold py-3 hover:bg-[#E55A00] transition-colors">
+              Save &amp; Reload
+            </button>
+            <button onClick={onClose} className="px-6 py-3 text-xs font-bold text-[#1C1C1A] bg-[#E5E2E0] hover:bg-[#D4D4D0] transition-colors">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── SYNC INDICATOR ───────────────────────────────────────────────────────────
+function SyncIndicator({ status, onSave }) {
+  // status: 'loading' | 'ready' | 'saving' | 'saved' | 'error' | 'offline'
+  const cfg = {
+    loading: { dot:'#B2B2B2', label:'Loading…',  spin:true  },
+    ready:   { dot:'#B2B2B2', label:'GitHub',     spin:false },
+    saving:  { dot:'#FF6E13', label:'Saving…',    spin:true  },
+    saved:   { dot:'#71E002', label:'Saved',       spin:false },
+    error:   { dot:'#FF4444', label:'Save failed', spin:false },
+    offline: { dot:'#B2B2B2', label:'Offline',     spin:false },
+  };
+  const c = cfg[status] || cfg.ready;
+  return (
+    <div className="flex items-center gap-2">
+      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${c.spin?'spin':''}`}
+        style={{ background: c.dot, boxShadow: status==='saved' ? `0 0 6px ${c.dot}` : 'none' }}/>
+      <span className="text-[#B2B2B2] text-[10px]">{c.label}</span>
+      {(status==='ready'||status==='error'||status==='offline') && (
+        <button onClick={onSave} title="Save to GitHub"
+          className="text-[#B2B2B2] hover:text-[#FF6E13] transition-colors opacity-60 hover:opacity-100 ml-1">
+          <IcSave s={12}/>
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── SIDEBAR ──────────────────────────────────────────────────────────────────
+const NAV = [
+  { id:'dashboard',   label:'Dashboard',   Icon:IcDash },
+  { id:'modules',     label:'Modules',     Icon:IcMod },
+  { id:'instructors', label:'Instructors', Icon:IcUser },
+  { id:'students',    label:'Students',    Icon:IcUsers },
+  { id:'calendar',    label:'Calendar',    Icon:IcCal },
+];
+
+function Sidebar({ page, onNav }) {
+  return (
+    <div style={{ width:216, flexShrink:0 }} className="flex flex-col bg-[#E2E2E0] h-screen sticky top-0">
+      <div className="px-8 pt-8 pb-10">
+        <div className="text-[#050505] text-lg font-bold leading-snug tracking-tight">Quartile</div>
+        <div className="text-[#1C1C1A] text-[10px] opacity-40 tracking-widest uppercase mt-0.5">Academy Tracker</div>
+      </div>
+      <div className="flex flex-col flex-1 gap-px pb-4">
+        {NAV.map(({ id, label, Icon }) => {
+          const active = page===id;
+          return (
+            <button key={id} onClick={()=>onNav(id)}
+              className={`flex items-center gap-3 py-3 px-8 w-full text-left transition-all duration-150
+                ${active ? 'bg-[#FF6E13]' : 'hover:bg-[#D8D8D4]'}`}>
+              <span className={active?'text-white':'text-[#B2B2B2]'}><Icon s={12}/></span>
+              <span className={`text-xs tracking-wide ${active?'text-white font-bold':'text-[#B2B2B2]'}`}>{label}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="border-t border-[#D4D4D0] px-8 py-5 flex flex-col gap-3">
+        <button className="flex items-center gap-3 opacity-50 hover:opacity-80 transition-opacity">
+          <span className="text-[#594137]"><IcPhone s={11}/></span><span className="text-[#B2B2B2] text-[10px]">Support</span>
+        </button>
+        <button className="flex items-center gap-3 opacity-50 hover:opacity-80 transition-opacity">
+          <span className="text-[#594137]"><IcLogout s={11}/></span><span className="text-[#B2B2B2] text-[10px]">Sign Out</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── TOPBAR ───────────────────────────────────────────────────────────────────
+function TopBar({ onUpload, syncStatus, onSave, onSettings }) {
+  return (
+    <div className="bg-[#EFEFEF] flex justify-end items-center px-10 py-5 gap-5 border-b border-[#E0E0DE] flex-shrink-0">
+      <SyncIndicator status={syncStatus} onSave={onSave}/>
+      <button onClick={onUpload}
+        className="flex items-center gap-2 bg-[#FF6E13] text-white text-[10px] font-bold px-4 py-2 rounded-full hover:bg-[#E55A00] transition-colors shadow-sm">
+        <IcUpload s={11}/> Upload Transcript
+      </button>
+      <button className="text-[#594137] hover:text-[#1C1C1A] transition-colors opacity-60 hover:opacity-100"><IcBell s={15}/></button>
+      <button onClick={onSettings} className="text-[#594137] hover:text-[#1C1C1A] transition-colors opacity-60 hover:opacity-100"><IcGear s={15}/></button>
+      <div className="w-8 h-8 rounded-full bg-[#FF6E13] flex items-center justify-center shadow-sm">
+        <span className="text-white text-[10px] font-bold">JD</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── LOADING SCREEN ───────────────────────────────────────────────────────────
+function LoadingScreen() {
+  return (
+    <div className="flex-1 flex items-center justify-center">
+      <div className="text-center fade-in">
+        <div className="w-8 h-8 rounded-full border-2 border-[#FF6E13] border-t-transparent spin mx-auto mb-4"/>
+        <p className="text-[#B2B2B2] text-xs tracking-widest uppercase">Loading from GitHub…</p>
+      </div>
+    </div>
+  );
+}
+
+// ─── DASHBOARD ────────────────────────────────────────────────────────────────
+function Dashboard({ modules, instructors, weekly, onModuleClick }) {
+  const recent = [...modules].filter(m=>m.sessionDate&&m.statuses.includes('Analyzed'))
+    .sort((a,b)=>b.sessionDate.localeCompare(a.sessionDate)).slice(0,4);
+  const analyzed = modules.filter(m=>m.statuses.includes('Analyzed')).length;
+  const presented = modules.filter(m=>m.statuses.includes('Presented')).length;
+  return (
+    <div className="flex-1 overflow-auto">
+      <div className="p-10 fade-up" style={{ maxWidth:1100 }}>
+        <p className="text-[#1C1C1A] text-[10px] mb-2 opacity-40 tracking-widest uppercase">Institutional Insight</p>
+        <h1 className="font-bold text-[#1C1C1A] leading-none tracking-tight" style={{ fontSize:52 }}>Quartile</h1>
+        <h1 className="text-[#1C1C1A] leading-none mb-3 tracking-tight" style={{ fontSize:52, fontWeight:300 }}>Academy Q2</h1>
+        <p className="text-[#594137] text-sm mb-10 pl-5 border-l-2 border-[#E5E2E0] leading-relaxed">Audited academic velocity and instructional impact for the Quartile New-Hire cohort.</p>
+
+        <div className="grid grid-cols-4 gap-px mb-12" style={{ background:'#D4D4D0' }}>
+          {[
+            { label:'Modules Delivered', val:presented, color:'#1C1C1A' },
+            { label:'Modules Analyzed',  val:analyzed,  color:'#FF6E13' },
+            { label:'Active Instructors',val:instructors.length, color:'#1C1C1A' },
+            { label:'Current Quarter',   val:'Q2', sub:'2026', color:'#FF6E13' },
+          ].map(({ label, val, color, sub }) => (
+            <div key={label} className="bg-[#FCF9F6] px-8 py-7">
+              <div className="text-[10px] font-bold text-[#1C1C1A] mb-5 tracking-wide">{label}</div>
+              <div className="font-bold leading-none" style={{ fontSize:34, color }}>{val}</div>
+              {sub && <div className="text-[9px] text-[#B2B2B2] mt-1.5">{sub}</div>}
+            </div>
+          ))}
+        </div>
+
+        <div className="bg-white border border-[#F0EDEB] p-8 mb-8">
+          <div className="text-[#1C1C1A] font-bold mb-8">Weekly Module Progress</div>
+          <div className="grid grid-cols-4 gap-8">
+            {weekly.map(({ label, pct }) => (
+              <div key={label}>
+                <div className="flex justify-between mb-2">
+                  <span className="text-[#594137] text-[10px] font-bold">{label}</span>
+                  <span className="text-[#594137] text-[10px] font-bold">{pct}%</span>
+                </div>
+                <div className="bg-[#F0EDEB] h-2.5">
+                  <div className="bg-[#FF6E13] h-2.5 bar-fill" style={{ width:`${pct}%` }}/>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-[#1C1C1A] font-bold">Recently Analyzed</h2>
+        </div>
+        <div className="flex flex-col gap-px" style={{ background:'#D4D4D0' }}>
+          {recent.map(m => (
+            <button key={m.id} onClick={()=>onModuleClick(m)}
+              className="bg-[#FCF9F6] hover:bg-[#F6F3F1] flex items-center justify-between px-6 py-4 w-full text-left group transition-colors">
+              <div className="flex items-center gap-4">
+                <span className="text-[#FF6E13] text-xs font-bold w-14">{m.id}</span>
+                <div>
+                  <div className="text-[#1C1C1A] text-sm font-medium">{m.shortTitle}</div>
+                  <div className="text-[#B2B2B2] text-[10px]">{m.instructor.name} · {m.sessionDate}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {m.statuses.slice(0,2).map(s=><Badge key={s} label={s}/>)}
+                {m.overallScore && <span className={`${scoreCls(m.overallScore)} text-xs font-bold px-2 py-1`}>{m.overallScore}/10</span>}
+                <IcChevR s={13} cls="text-[#B2B2B2] opacity-0 group-hover:opacity-100 transition-opacity"/>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── MODULES PAGE ─────────────────────────────────────────────────────────────
+function ModulesPage({ modules, onModuleClick }) {
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState('All');
+  const FILTERS = ['All','Analyzed','Presented','Live','Scheduled'];
+
+  const filtered = modules.filter(m => {
+    const q = search.toLowerCase();
+    const matchQ = !search || m.title.toLowerCase().includes(q) || m.id.toLowerCase().includes(q) || m.code.toLowerCase().includes(q) || m.instructor.name.toLowerCase().includes(q);
+    const matchF = filter==='All' || m.statuses.includes(filter);
+    return matchQ && matchF;
+  });
+
+  return (
+    <div className="flex-1 overflow-auto">
+      <div className="p-10 fade-up" style={{ maxWidth:1100 }}>
+        <h1 className="font-bold text-[#1C1C1A] leading-none mb-2 tracking-tight" style={{ fontSize:52 }}>Modules</h1>
+        <p className="text-[#594137] text-sm mb-10 leading-relaxed">Complete curriculum record — click any module to view full details and session analysis.</p>
+
+        <div className="grid grid-cols-4 gap-4 mb-10">
+          {[
+            { label:'Total',     val:modules.length, acc:false },
+            { label:'Analyzed',  val:modules.filter(m=>m.statuses.includes('Analyzed')).length, acc:true },
+            { label:'Live',      val:modules.filter(m=>m.statuses.includes('Live')).length, acc:false },
+            { label:'Scheduled', val:modules.filter(m=>m.statuses.includes('Scheduled')).length, acc:false },
+          ].map(({ label, val, acc }) => (
+            <div key={label} className="bg-[#F0EDEB] px-8 py-8">
+              <div className="text-[#594137] text-[10px] font-bold mb-4 tracking-wide">{label}</div>
+              <div className={`text-4xl font-bold ${acc?'text-[#FF6E13]':'text-[#1C1C1A]'}`}>{val}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-4 mb-6">
+          <div className="flex items-center gap-2 bg-[#EBE8E5] px-4 py-2.5 flex-1 max-w-xs">
+            <IcSearch s={13} cls="text-[#B2B2B2]"/>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search modules..."
+              className="bg-transparent text-sm text-[#1C1C1A] outline-none placeholder-[#B2B2B2] flex-1"/>
+          </div>
+          <div className="flex gap-2">
+            {FILTERS.map(f=>(
+              <button key={f} onClick={()=>setFilter(f)}
+                className={`text-[10px] px-3 py-1.5 rounded-full font-bold transition-all
+                  ${filter===f ? 'bg-[#1C1C1A] text-white' : 'bg-[#E5E2E0] text-[#594137] hover:bg-[#D4D4D0]'}`}>{f}</button>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-[#F6F3F1] flex items-center px-6 py-3 mb-px">
+          {[['ID','w-20'],['Module','flex-1'],['Instructor','w-40'],['Date','w-28'],['Status','w-52'],['Score','w-20']].map(([h,w])=>(
+            <div key={h} className={`text-[#594137] text-[10px] font-bold tracking-wide ${w}`}>{h}</div>
+          ))}
+        </div>
+
+        <div className="flex flex-col gap-px" style={{ background:'#D4D4D0' }}>
+          {filtered.length===0 && <div className="bg-white px-6 py-10 text-center text-[#B2B2B2] text-sm">No modules match this filter.</div>}
+          {filtered.map(m=>(
+            <button key={m.id} onClick={()=>onModuleClick(m)}
+              className="bg-white hover:bg-[#FDFAF8] flex items-center px-6 py-4 w-full text-left group transition-colors">
+              <div className="w-20"><span className="text-[#FF6E13] text-xs font-bold">{m.id}</span></div>
+              <div className="flex-1 pr-4">
+                <div className="text-[#1C1C1A] text-sm font-medium">{m.shortTitle}</div>
+                <div className="text-[#B2B2B2] text-[10px] mt-0.5">{m.code} · Week {m.week}</div>
+              </div>
+              <div className="w-40 text-[#594137] text-xs">{m.instructor.name}</div>
+              <div className="w-28 text-[#594137] text-xs">{m.sessionDate||'—'}</div>
+              <div className="w-52 flex items-center gap-1 flex-wrap">{m.statuses.map(s=><Badge key={s} label={s}/>)}</div>
+              <div className="w-20 flex items-center gap-2">
+                {m.overallScore
+                  ? <span className={`${scoreCls(m.overallScore)} text-sm font-bold px-2 py-1`}>{m.overallScore}/10</span>
+                  : <span className="text-[#B2B2B2] text-xs">—</span>}
+                <IcChevR s={13} cls="text-[#B2B2B2] opacity-0 group-hover:opacity-100 transition-opacity"/>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── MODULE MODAL ─────────────────────────────────────────────────────────────
+const TABS = ['Overview','Content Analysis','Delivery','Students','Q&A Log','Materials'];
+
+function ModalEmpty({ icon, msg, btn }) {
+  return (
+    <div className="flex items-center justify-center" style={{ minHeight:280 }}>
+      <div className="text-center">
+        <div className="text-[#D4D4D0] mb-4 flex justify-center">{icon}</div>
+        <p className="text-[#B2B2B2] text-sm mb-5">{msg}</p>
+        {btn && <button className="bg-[#FF6E13] text-white text-xs font-bold px-6 py-2.5 hover:bg-[#E55A00] transition-colors">{btn}</button>}
+      </div>
+    </div>
+  );
+}
+
+function ModalOverview({ m }) {
+  return (
+    <div className="p-8 flex gap-10">
+      <div className="flex-1 min-w-0">
+        <div className="grid grid-cols-3 gap-x-6 gap-y-8 mb-12">
+          {[
+            { label:'Instructor', val:m.instructor.name, sub:m.instructor.role },
+            { label:'Session Date', val:m.sessionDate||'—', icon:<IcCal s={12}/> },
+            { label:'Length', val:m.actualLength ? m.actualLength+' actual' : '—', sub:m.scheduledLength+' scheduled', icon:<IcClock s={12}/> },
+            { label:'Recording', val:m.recordingLink ? 'Watch Session' : 'Not available', icon:<IcPlay s={12}/>, link:m.recordingLink },
+            { label:'Slides', val:m.slidesLink ? 'Module Slides' : 'Not available', icon:<IcLink s={12}/>, link:m.slidesLink },
+            { label:'Platform', val:m.platform==='AMZ' ? 'Amazon' : m.platform },
+          ].map(({ label, val, sub, icon, link })=>(
+            <div key={label}>
+              <div className="text-[#1C1C1A] text-[10px] mb-2 tracking-wide">{label}</div>
+              {link ? (
+                <a href={link} className="flex items-center gap-2 text-[#1C1C1A] text-sm font-bold hover:text-[#FF6E13] transition-colors">
+                  {icon && <span className="text-[#B2B2B2]">{icon}</span>}{val}
+                </a>
+              ) : (
+                <div className="flex items-center gap-2">
+                  {icon && <span className="text-[#B2B2B2]">{icon}</span>}
+                  <div>
+                    <div className="text-[#1C1C1A] text-sm font-bold">{val}</div>
+                    {sub && <div className="text-[#B2B2B2] text-[10px] mt-0.5">{sub}</div>}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {m.learningObjective && (
+          <div className="mb-10 pl-5 border-l-2 border-[#FF6E13]">
+            <div className="text-[#FF6E13] text-[10px] font-bold mb-3 tracking-widest uppercase">Learning Objective</div>
+            <p className="text-[#1C1C1A] text-sm leading-relaxed">{m.learningObjective}</p>
+          </div>
+        )}
+
+        {m.followUpItems?.length > 0 && (
+          <div className="pl-5 border-l-2 border-[#FF6E13]">
+            <div className="text-[#FF6E13] text-[10px] font-bold mb-4 tracking-widest uppercase">Follow-up Items</div>
+            <div className="flex flex-col gap-3">
+              {m.followUpItems.map((item,i)=>(
+                <div key={i} className="flex items-start gap-4">
+                  <div className="w-1.5 h-1.5 bg-[#FF6E13] rounded-full mt-2 flex-shrink-0"/>
+                  <span className="text-[#1C1C1A] text-sm leading-relaxed">{item}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {m.overallScore && (
+        <div className="flex flex-col gap-4 flex-shrink-0" style={{ width:200 }}>
+          <div className="bg-[#F6F3F1] p-6 rounded-xl flex flex-col justify-between" style={{ minHeight:160 }}>
+            <div className="text-[#1C1C1A] text-[10px] font-bold tracking-wide mb-8">Overall Score</div>
+            <div>
+              <span className="text-[#1C1C1A] leading-none" style={{ fontSize:36, fontWeight:300 }}>{m.overallScore}</span>
+              <span className="text-[#B2B2B2] text-base">/10</span>
+            </div>
+          </div>
+          <div className="bg-[#FF6E13] p-6 rounded-xl flex flex-col justify-between" style={{ minHeight:160 }}>
+            <div className="text-white text-[10px] font-bold tracking-wide mb-8">Avg. Satisfaction</div>
+            <div>
+              <span className="text-white leading-none" style={{ fontSize:36, fontWeight:300 }}>{m.satisfactionScore}</span>
+              <span className="text-white opacity-60 text-base">/5.0</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ModalContent({ m }) {
+  if (!m.contentAnalysis?.coverage?.length)
+    return <ModalEmpty icon={<IcBar s={32}/>} msg="Upload a session transcript to generate content analysis."/>;
+  const depthColor = { deep:'#FF6E13', covered:'#1C1C1A', partial:'#B2B2B2', brief:'#E5E2E0' };
+  return (
+    <div className="p-8">
+      <div className="grid grid-cols-2 gap-10">
+        <div>
+          <div className="text-[#FF6E13] text-[10px] font-bold mb-5 tracking-widest uppercase pl-4 border-l-2 border-[#FF6E13]">Topic Coverage Depth</div>
+          <div className="flex flex-col gap-5">
+            {m.contentAnalysis.coverage.map(({ topic, depth, status })=>(
+              <div key={topic}>
+                <div className="flex justify-between mb-1.5">
+                  <span className="text-[#1C1C1A] text-xs">{topic}</span>
+                  <span className="text-[#B2B2B2] text-[10px] font-bold capitalize">{status}</span>
+                </div>
+                <div className="bg-[#F0EDEB] h-2">
+                  <div className="h-2 bar-fill" style={{ width:`${depth}%`, backgroundColor:depthColor[status] }}/>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="text-[#FF6E13] text-[10px] font-bold mb-5 tracking-widest uppercase pl-4 border-l-2 border-[#FF6E13]">Key Insights</div>
+          <div className="flex flex-col gap-3 mb-8">
+            {m.contentAnalysis.keyInsights.map((ins,i)=>(
+              <div key={i} className="bg-[#F6F3F1] p-4 flex gap-3">
+                <div className="w-1 h-1 bg-[#FF6E13] rounded-full mt-2 flex-shrink-0"/>
+                <p className="text-[#594137] text-xs leading-relaxed">{ins}</p>
+              </div>
+            ))}
+          </div>
+          <div className="text-[#FF6E13] text-[10px] font-bold mb-4 tracking-widest uppercase pl-4 border-l-2 border-[#FF6E13]">Recommendations</div>
+          <div className="flex flex-col gap-3">
+            {m.contentAnalysis.recommendations.map((r,i)=>(
+              <div key={i} className="flex gap-3">
+                <span className="text-[#FF6E13] text-[10px] font-bold mt-0.5 flex-shrink-0">{i+1}.</span>
+                <p className="text-[#594137] text-xs leading-relaxed">{r}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModalStudents({ m }) {
+  const withInt = m.students.filter(s=>s.interactions);
+  const top = m.students.find(s=>s.isTop) || (withInt.length ? [...withInt].sort((a,b)=>b.interactions-a.interactions)[0] : null);
+  const btm = m.students.find(s=>s.isBottom) || (withInt.length>1 ? [...withInt].sort((a,b)=>a.interactions-b.interactions)[0] : null);
+  return (
+    <div className="p-8">
+      {m.participantBaseline && (
+        <div className="flex gap-6 mb-8">
+          <div className="bg-[#F6F3F1] p-8 flex-shrink-0" style={{ width:360 }}>
+            <div className="text-[#594137] text-xs font-bold mb-6 tracking-wide">Participant Baseline</div>
+            <div className="flex items-end gap-3 mb-5">
+              <span className="text-[#1C1C1A] font-bold leading-none" style={{ fontSize:60 }}>{m.participantBaseline.score}%</span>
+              {m.participantBaseline.delta > 0 && (
+                <span className="text-[#A14000] text-sm font-bold mb-3">+{m.participantBaseline.delta}% vs Prev.</span>
+              )}
+            </div>
+            <p className="text-[#594137] text-sm leading-relaxed">{m.participantBaselineNote}</p>
+          </div>
+          <div className="flex flex-1 gap-5">
+            {top && (
+              <div className="flex-1 bg-[#F0EDEB] p-8">
+                <div className="text-[#594137] text-xs font-bold mb-8 tracking-wide">Most Engaged</div>
+                <div className="flex items-center gap-4">
+                  <Avatar name={top.name} color="#FF6E13" size={48}/>
+                  <div>
+                    <div className="text-[#1C1C1A] text-lg font-bold">{top.name}</div>
+                    <div className="text-[#594137] text-sm">{top.interactions} Interactions</div>
+                  </div>
+                </div>
+              </div>
+            )}
+            {btm && btm.name !== top?.name && (
+              <div className="flex-1 bg-[#F0EDEB] p-8">
+                <div className="text-[#594137] text-xs font-bold mb-8 tracking-wide">Least Engaged</div>
+                <div className="flex items-center gap-4">
+                  <Avatar name={btm.name} color="#B2B2B2" size={48}/>
+                  <div>
+                    <div className="text-[#1C1C1A] text-lg font-bold">{btm.name}</div>
+                    <div className="text-[#594137] text-sm">{btm.interactions} Interactions</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      <div className="bg-white">
+        <div className="flex items-center px-8 py-3 bg-[#F6F3F1]">
+          <div className="flex-1 text-[#594137] text-[10px] font-bold tracking-wide">Student Profile</div>
+          <div className="w-36 text-center text-[#594137] text-[10px] font-bold tracking-wide">Interactions</div>
+          <div className="w-32 text-center text-[#594137] text-[10px] font-bold tracking-wide">Score</div>
+          <div className="flex-1 pl-8 text-[#594137] text-[10px] font-bold tracking-wide">Curator's Notes</div>
+        </div>
+        {m.students.map((s,i)=>(
+          <div key={s.name} className={`flex items-start px-8 py-6 ${i<m.students.length-1?'border-b border-[#F6F3F1]':''}`}>
+            <div className="flex-1 flex items-center gap-5">
+              <Avatar name={s.name} color={s.score>=8?'#FF6E13':s.score>=6?'#1C1C1A':'#B2B2B2'} size={52}/>
+              <div>
+                <div className="text-[#1C1C1A] text-base font-bold">{s.name}</div>
+                <div className="text-[#594137] text-xs mt-0.5">{s.title}</div>
+              </div>
+            </div>
+            <div className="w-36 flex justify-center items-start pt-2">
+              {s.interactions ? <span className="text-[#1C1C1A] text-2xl font-bold">{s.interactions}</span>
+                : <span className="text-[#B2B2B2] text-sm">—</span>}
+            </div>
+            <div className="w-32 flex justify-center items-start pt-2">
+              {s.score ? <span className={`${scoreCls(s.score)} text-lg font-bold px-3 py-1.5`}>{s.score}/10</span>
+                : <span className="text-[#B2B2B2] text-sm">—</span>}
+            </div>
+            <div className="flex-1 pl-8 pt-1">
+              <p className="text-[#594137] text-sm leading-relaxed">{s.notes||'—'}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ModalQA({ m }) {
+  if (!m.qaLog?.length) return <ModalEmpty icon={<IcFile s={32}/>} msg="Upload a session transcript to generate the Q&A log."/>;
+  return (
+    <div className="p-8">
+      <div className="text-[#FF6E13] text-xs font-bold mb-6 tracking-wide">{m.qaLog.length} Recorded Exchanges — {m.sessionDate}</div>
+      <div className="flex flex-col gap-6">
+        {m.qaLog.map((qa,i)=>(
+          <div key={i} className="border-l-2 border-[#EFEFEF] pl-6 pb-2">
+            <div className="flex items-center gap-3 mb-3">
+              <Avatar name={qa.speaker} color="#FF6E13" size={28}/>
+              <span className="text-[#1C1C1A] text-sm font-bold">{qa.speaker}</span>
+              <span className="text-[#B2B2B2] text-xs">{qa.time}</span>
+            </div>
+            <div className="bg-[#F6F3F1] p-4 mb-3">
+              <p className="text-[#1C1C1A] text-sm italic">"{qa.text}"</p>
+            </div>
+            {qa.response && (
+              <div className="pl-4 border-l border-[#FF6E1333]">
+                <div className="text-[#B2B2B2] text-[10px] font-bold mb-1 tracking-wide">INSTRUCTOR RESPONSE</div>
+                <p className="text-[#594137] text-sm leading-relaxed">{qa.response}</p>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ModuleModal({ m, onClose }) {
+  const [tab, setTab] = useState('Overview');
+  if (!m) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center fade-in"
+      style={{ background:'rgba(28,28,26,.6)', backdropFilter:'blur(4px)' }} onClick={onClose}>
+      <div className="bg-[#FCF9F6] flex flex-col shadow-2xl fade-up"
+        style={{ width:'92vw', maxWidth:1120, maxHeight:'92vh' }}
+        onClick={e=>e.stopPropagation()}>
+
+        <div className="bg-[#EFEFEFCC] px-8 py-4 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-6">
+            <div>
+              <div className="text-[#FF6E13] text-xs font-bold tracking-widest">{m.id}</div>
+              <div className="text-[#050505] text-xl font-bold mt-0.5 tracking-tight">{m.shortTitle}</div>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {m.statuses.map(s=><Badge key={s} label={s}/>)}
+              <span className="bg-[#E5E2E0] text-[#1C1C1A] text-[10px] font-bold px-3 py-1.5 rounded-full">Week {m.week}</span>
+              <span className="bg-[#E5E2E0] text-[#1C1C1A] text-[10px] font-bold px-3 py-1.5 rounded-full">{m.platform}</span>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-[#594137] hover:text-[#1C1C1A] transition-colors p-1"><IcX s={18}/></button>
+        </div>
+
+        <div className="bg-[#F6F3F1] flex items-center px-10 border-b border-[#E5E2E0] flex-shrink-0 overflow-x-auto">
+          {TABS.map(t=>(
+            <button key={t} onClick={()=>setTab(t)}
+              className={`py-4 mr-10 text-sm whitespace-nowrap border-b-2 transition-all flex-shrink-0
+                ${tab===t ? 'text-[#FF6E13] font-bold border-[#FF6E13]' : 'text-[#B2B2B2] border-transparent hover:text-[#594137]'}`}>{t}</button>
+          ))}
+        </div>
+
+        <div className="overflow-auto flex-1 slide-in" key={tab}>
+          {tab==='Overview'         && <ModalOverview m={m}/>}
+          {tab==='Content Analysis' && <ModalContent m={m}/>}
+          {tab==='Delivery'         && <ModalEmpty icon={<IcBar s={32}/>} msg="Delivery metrics will appear after session analysis."/>}
+          {tab==='Students'         && <ModalStudents m={m}/>}
+          {tab==='Q&A Log'          && <ModalQA m={m}/>}
+          {tab==='Materials'        && <ModalEmpty icon={<IcFile s={32}/>} msg="No materials uploaded yet." btn="Upload Materials"/>}
+        </div>
+
+        <div className="bg-white px-8 py-4 flex items-center justify-between flex-shrink-0 border-t border-[#EFEFEF]">
+          <span className="text-[#8D7165] text-[10px]">Modified: {m.modifiedDate}</span>
+          <div className="flex items-center gap-3">
+            <button className="text-[#1C1C1A] text-xs font-bold px-6 py-2.5 hover:bg-[#F6F3F1] transition-colors">Archive Module</button>
+            <button className="bg-[#FF6E13] text-white text-xs font-bold px-8 py-2.5 hover:bg-[#E55A00] transition-colors">Edit Module</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── INSTRUCTORS PAGE ─────────────────────────────────────────────────────────
+function InstructorsPage({ modules, instructors }) {
+  return (
+    <div className="flex-1 overflow-auto">
+      <div className="p-10 fade-up" style={{ maxWidth:1100 }}>
+        <h1 className="font-bold text-[#1C1C1A] leading-none mb-2 tracking-tight" style={{ fontSize:52 }}>Instructors</h1>
+        <p className="text-[#594137] text-sm mb-10 leading-relaxed">Faculty performance and module ownership across the Quartile Academy curriculum.</p>
+        <div className="grid grid-cols-3 gap-6">
+          {instructors.map(inst=>{
+            const mods = modules.filter(m=>m.instructor.name===inst.name);
+            const analyzed = mods.filter(m=>m.statuses.includes('Analyzed'));
+            const scores = mods.filter(m=>m.overallScore).map(m=>m.overallScore);
+            const avg = scores.length ? (scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(1) : null;
+            return (
+              <div key={inst.name} className="bg-white border border-[#F0EDEB] p-8 hover:border-[#FF6E13] transition-all cursor-pointer group">
+                <div className="flex items-center gap-4 mb-6">
+                  <Avatar name={inst.name} color={inst.color} size={52}/>
+                  <div>
+                    <div className="text-[#1C1C1A] text-base font-bold group-hover:text-[#FF6E13] transition-colors">{inst.name}</div>
+                    <div className="text-[#594137] text-xs mt-0.5">{inst.role}</div>
+                    <div className="text-[#B2B2B2] text-[10px]">{inst.team}</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2 mb-6">
+                  {[
+                    { label:'Modules', val:mods.length, c:'#1C1C1A' },
+                    { label:'Analyzed', val:analyzed.length, c:'#FF6E13' },
+                    { label:'Avg Score', val:avg||'—', c:'#1C1C1A' },
+                  ].map(({ label, val, c })=>(
+                    <div key={label} className="bg-[#F6F3F1] p-3 text-center">
+                      <div className="text-2xl font-bold" style={{ color:c }}>{val}</div>
+                      <div className="text-[#B2B2B2] text-[9px] mt-0.5">{label}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-col gap-px" style={{ background:'#EFEFEF' }}>
+                  {mods.slice(0,3).map(m=>(
+                    <div key={m.id} className="flex items-center gap-2 bg-white px-3 py-2">
+                      <span className="text-[#FF6E13] text-[10px] font-bold w-12">{m.id}</span>
+                      <span className="text-[#594137] text-[10px] flex-1 truncate">{m.shortTitle}</span>
+                      <Badge label={m.statuses[m.statuses.length-1]}/>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── STUDENTS PAGE ────────────────────────────────────────────────────────────
+function StudentsPage({ studentsBase }) {
+  const sMap = { 'Exceeding':'bg-[#71E002] text-[#1C1C1A]', 'On Track':'bg-[#E5E2E0] text-[#1C1C1A]', 'At Risk':'bg-[#FFDAD6] text-[#93000A]' };
+  return (
+    <div className="flex-1 overflow-auto">
+      <div className="p-10 fade-up" style={{ maxWidth:1100 }}>
+        <h1 className="font-bold text-[#1C1C1A] leading-none mb-2 tracking-tight" style={{ fontSize:52 }}>Students</h1>
+        <p className="text-[#594137] text-sm mb-10 leading-relaxed">Cohort performance tracking across all modules and sessions.</p>
+        <div className="grid grid-cols-4 gap-4 mb-10">
+          {[
+            { label:'Enrolled',  val:studentsBase.length, acc:false },
+            { label:'Exceeding', val:studentsBase.filter(s=>s.status==='Exceeding').length, acc:true },
+            { label:'On Track',  val:studentsBase.filter(s=>s.status==='On Track').length, acc:false },
+            { label:'At Risk',   val:studentsBase.filter(s=>s.status==='At Risk').length, acc:false },
+          ].map(({ label, val, acc })=>(
+            <div key={label} className="bg-[#F0EDEB] px-8 py-8">
+              <div className="text-[#594137] text-[10px] font-bold mb-4 tracking-wide">{label}</div>
+              <div className={`text-4xl font-bold ${acc?'text-[#FF6E13]':'text-[#1C1C1A]'}`}>{val}</div>
+            </div>
+          ))}
+        </div>
+        <div className="bg-white">
+          <div className="flex items-center px-8 py-4 bg-[#F6F3F1]">
+            <div className="flex-1 text-[#594137] text-[10px] font-bold tracking-wide">Student</div>
+            <div className="w-44 text-[#594137] text-[10px] font-bold tracking-wide">Total Interactions</div>
+            <div className="w-32 text-[#594137] text-[10px] font-bold tracking-wide">Avg. Score</div>
+            <div className="w-32 text-[#594137] text-[10px] font-bold tracking-wide">Cohort</div>
+            <div className="w-28 text-[#594137] text-[10px] font-bold tracking-wide">Status</div>
+          </div>
+          {studentsBase.map((s,i)=>(
+            <div key={s.name} className={`flex items-center px-8 py-5 ${i<studentsBase.length-1?'border-b border-[#F6F3F1]':''}`}>
+              <div className="flex-1 flex items-center gap-4">
+                <Avatar name={s.name} color={s.status==='Exceeding'?'#FF6E13':s.status==='At Risk'?'#B2B2B2':'#594137'} size={44}/>
+                <div>
+                  <div className="text-[#1C1C1A] font-bold text-base">{s.name}</div>
+                  <div className="text-[#594137] text-xs">{s.title}</div>
+                </div>
+              </div>
+              <div className="w-44 text-[#1C1C1A] text-2xl font-bold">{s.totalInteractions}</div>
+              <div className="w-32 text-[#1C1C1A] font-bold">{s.avgScore.toFixed(1)}<span className="text-[#B2B2B2] text-xs">/10</span></div>
+              <div className="w-32 text-[#B2B2B2] text-xs">{s.cohort}</div>
+              <div className="w-28"><span className={`text-[10px] font-bold px-3 py-1.5 rounded-full ${sMap[s.status]}`}>{s.status}</span></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── CALENDAR PAGE ────────────────────────────────────────────────────────────
+const CAL_DAYS = ['MON','TUE','WED','THU','FRI'];
+const CAL_DATES = [30,31,1,2,3];
+const CAL_ACTIVE = 1;
+const HOURS = ['08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00'];
+const CAL_EVENTS = [
+  { day:0, startH:9, spanH:2, title:'W1.17 Advanced SP', sub:'Guilherme Decimo', type:'Active', bg:'#FF6E13', fg:'white' },
+  { day:1, startH:10, spanH:1, title:'Office Hours', sub:'Q&A Review', type:'Review', bg:'#E5E2E0', fg:'#1C1C1A' },
+  { day:3, startH:9, spanH:3, title:'W1.18 Sponsored Brands', sub:'Felipe Tahara', type:'Scheduled', bg:'#E5E2E0', fg:'#1C1C1A' },
+  { day:4, startH:8, spanH:1, title:'Module Assessment', sub:'Phase I', type:'Finals', bg:'#1C1C1A', fg:'white' },
+];
+
+function CalendarPage({ instructors }) {
+  const cellH = 76;
+  return (
+    <div className="flex-1 overflow-auto">
+      <div className="p-10 fade-up" style={{ maxWidth:1100 }}>
+        <h1 className="font-bold text-[#1C1C1A] leading-none tracking-tight" style={{ fontSize:52 }}>MODULES</h1>
+        <h1 className="font-bold text-[#1C1C1A] leading-none mb-4 tracking-tight" style={{ fontSize:52 }}>CALENDAR</h1>
+        <p className="text-[#594137] text-sm mb-10 leading-relaxed">Weekly Academic Schedule: Curriculum development and faculty review sessions. High priority modules marked in kinetic orange.</p>
+
+        <div className="grid grid-cols-4 gap-px mb-10" style={{ background:'#D4D4D0' }}>
+          {[
+            { label:'Total Hours',    val:'42.5', c:'#1C1C1A' },
+            { label:'Active Modules', val:'08',   c:'#FF6E13' },
+            { label:'Faculty Leads',  val:instructors.length, c:'#1C1C1A' },
+            { label:'Completion',     val:'74%',  c:'#1C1C1A' },
+          ].map(({ label, val, c })=>(
+            <div key={label} className="bg-[#FCF9F6] px-8 py-7">
+              <div className="text-[10px] font-bold text-[#1C1C1A] mb-3 tracking-wide">{label}</div>
+              <div className="text-4xl font-bold" style={{ color:c }}>{val}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="bg-[#F6F3F1]">
+          <div className="flex border-b border-[#E5E2E0]">
+            <div style={{ width:68 }} className="flex-shrink-0"/>
+            {CAL_DAYS.map((d,i)=>(
+              <div key={d} style={{ flex:1 }}
+                className={`py-6 flex flex-col items-center gap-2 ${i===CAL_ACTIVE?'bg-[#FF6E130D]':''}`}>
+                <span className={`text-[10px] font-bold tracking-widest ${i===CAL_ACTIVE?'text-[#FF6E13]':'text-[#594137]'}`}>{d}</span>
+                <span className={`text-2xl font-bold ${i===CAL_ACTIVE?'text-[#FF6E13]':'text-[#1C1C1A]'}`}>{CAL_DATES[i]}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex" style={{ height:HOURS.length*cellH }}>
+            <div style={{ width:68 }} className="flex-shrink-0 border-r border-[#E5E2E0]">
+              {HOURS.map(h=>(
+                <div key={h} style={{ height:cellH }} className="flex items-start justify-end pr-3 pt-3">
+                  <span className="text-[#594137] text-[10px] font-bold">{h}</span>
+                </div>
+              ))}
+            </div>
+            {CAL_DAYS.map((d,di)=>{
+              const evs = CAL_EVENTS.filter(e=>e.day===di);
+              return (
+                <div key={d} style={{ flex:1, position:'relative' }}
+                  className={`border-r border-[#E5E2E0] last:border-0 ${di===CAL_ACTIVE?'bg-[#FF6E130D]':''}`}>
+                  {HOURS.map((_,hi)=>(
+                    <div key={hi} style={{ height:cellH, borderBottom:'1px solid #E5E2E0' }}/>
+                  ))}
+                  {evs.map((ev,ei)=>(
+                    <div key={ei} style={{
+                      position:'absolute', top:(ev.startH-8)*cellH+4,
+                      left:4, right:4, height:ev.spanH*cellH-8,
+                      background:ev.bg, padding:'8px 10px',
+                    }}>
+                      <div style={{ color:ev.fg, fontSize:9, fontWeight:700, opacity:.7, marginBottom:2 }}>{ev.type}</div>
+                      <div style={{ color:ev.fg, fontSize:10, fontWeight:700, lineHeight:1.3 }}>{ev.title}</div>
+                      <div style={{ color:ev.fg, fontSize:9, marginTop:3, opacity:.8 }}>{ev.sub}</div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-8 mt-6 flex-wrap">
+          {[['#1565C0','AMAZON'],['#C42D00','GOOGLE'],['#FF6E13','QUARTILE'],['#71E002','WALMART'],['#1C1C1A','ASSESSMENT']].map(([c,l])=>(
+            <div key={l} className="flex items-center gap-2">
+              <div className="w-3 h-3" style={{ background:c }}/>
+              <span className="text-[#594137] text-[10px] font-bold tracking-widest">{l}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── TRANSCRIPT MODAL ─────────────────────────────────────────────────────────
+function TranscriptModal({ onClose, modules, onUpdateModule }) {
+  const [text, setText] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [matched, setMatched] = useState(null);
+  const [err, setErr] = useState('');
+  const [applied, setApplied] = useState(false);
+
+  const analyze = async () => {
+    if (!text.trim()) { setErr('Please paste a transcript first.'); return; }
+    setLoading(true); setErr(''); setResult(null); setMatched(null); setApplied(false);
+    try {
+      const headers = {
+        'Content-Type':'application/json',
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true',
+      };
+      if (apiKey) headers['x-api-key'] = apiKey;
+
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method:'POST', headers,
+        body: JSON.stringify({
+          model:'claude-sonnet-4-20250514',
+          max_tokens:2000,
+          messages:[{ role:'user', content:`Analyze this training session transcript. Return ONLY valid JSON (no markdown fences) with exactly this structure:
+{
+  "moduleCode": "e.g. W1.17",
+  "moduleId": "e.g. QA117",
+  "date": "YYYY-MM-DD",
+  "instructorName": "full name",
+  "actualDuration": "e.g. 2h 00m",
+  "overallScore": 9,
+  "satisfactionScore": 4.9,
+  "participants": [{"name":"Ana Reyes","interactions":42,"score":9,"notes":"brief note"}],
+  "topTopics": ["topic1","topic2","topic3"],
+  "keyInsights": ["insight1","insight2"],
+  "followUpItems": ["item1","item2"],
+  "qaExchanges": [{"time":"09:04","speaker":"Name","text":"question text","response":"instructor response"}]
+}
+Transcript:\n${text.slice(0,6000)}` }]
+        })
+      });
+      if (!res.ok) throw new Error(res.status);
+      const data = await res.json();
+      const raw = data.content?.[0]?.text || '{}';
+      const parsed = JSON.parse(raw.replace(/```json|```/g,'').trim());
+      setResult(parsed);
+      const match = modules.find(m =>
+        m.id.toLowerCase() === (parsed.moduleId||'').toLowerCase() ||
+        m.code.toLowerCase() === (parsed.moduleCode||'').toLowerCase()
+      );
+      setMatched(match || null);
+    } catch(e) {
+      setErr('Analysis failed. ' + (apiKey ? 'Check your API key.' : 'Add your Anthropic API key for standalone use.'));
+    }
+    setLoading(false);
+  };
+
+  const apply = () => {
+    if (!matched || !result) return;
+    const updatedStudents = matched.students.map(st => {
+      const p = result.participants?.find(p => p.name.toLowerCase().includes(st.name.split(' ')[0].toLowerCase()));
+      if (!p) return st;
+      return { ...st, interactions:p.interactions||st.interactions, score:p.score||st.score, notes:p.notes||st.notes };
+    });
+    const sorted = [...updatedStudents].filter(s=>s.interactions).sort((a,b)=>b.interactions-a.interactions);
+    updatedStudents.forEach(s=>{ delete s.isTop; delete s.isBottom; });
+    if (sorted.length>0) { const t=updatedStudents.find(s=>s.name===sorted[0].name); if(t) t.isTop=true; }
+    if (sorted.length>1) { const b=updatedStudents.find(s=>s.name===sorted[sorted.length-1].name); if(b) b.isBottom=true; }
+
+    const newQA = (result.qaExchanges||[]).map(q=>({ time:q.time||'', speaker:q.speaker||'', text:q.text||'', response:q.response||'' }));
+    const now = new Date();
+    const ds = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')} ${now.getHours()<12?'AM':'PM'}`;
+
+    onUpdateModule(matched.id, {
+      sessionDate: result.date || matched.sessionDate,
+      actualLength: result.actualDuration || matched.actualLength,
+      overallScore: result.overallScore || matched.overallScore,
+      satisfactionScore: result.satisfactionScore || matched.satisfactionScore,
+      statuses: [...new Set([...matched.statuses.filter(s=>s!=='Scheduled'), 'Presented','Analyzed'])],
+      students: updatedStudents,
+      qaLog: newQA.length ? newQA : matched.qaLog,
+      followUpItems: result.followUpItems?.length ? result.followUpItems : matched.followUpItems,
+      modifiedDate: ds,
+    });
+    setApplied(true);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center fade-in"
+      style={{ background:'rgba(28,28,26,.6)', backdropFilter:'blur(4px)' }} onClick={onClose}>
+      <div className="bg-[#FCF9F6] shadow-2xl fade-up overflow-hidden"
+        style={{ width:680, maxHeight:'90vh', display:'flex', flexDirection:'column' }}
+        onClick={e=>e.stopPropagation()}>
+
+        <div className="bg-[#EFEFEF] px-8 py-4 flex items-center justify-between flex-shrink-0">
+          <div>
+            <div className="text-[#FF6E13] text-[10px] font-bold tracking-widest uppercase">Session Analysis</div>
+            <div className="text-[#1C1C1A] text-lg font-bold mt-0.5">Upload Transcript</div>
+          </div>
+          <button onClick={onClose} className="text-[#594137] hover:text-[#1C1C1A] transition-colors"><IcX s={18}/></button>
+        </div>
+
+        <div className="p-8 overflow-auto flex-1">
+          <p className="text-[#594137] text-sm mb-6 leading-relaxed">
+            Paste a session transcript below. Claude will extract module data, participant interactions, Q&A exchanges, then match it to the right module and update all fields automatically.
+          </p>
+
+          <div className="mb-4">
+            <label className="text-[10px] font-bold text-[#1C1C1A] block mb-2 tracking-widest uppercase">
+              API Key <span className="text-[#B2B2B2] font-normal normal-case tracking-normal">(for standalone use — not needed in Claude.ai)</span>
+            </label>
+            <input type="password" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-ant-..."
+              className="w-full bg-[#F6F3F1] border border-[#E5E2E0] px-4 py-2.5 text-sm text-[#1C1C1A] outline-none focus:border-[#FF6E13] transition-colors"/>
+          </div>
+
+          <div className="mb-5">
+            <label className="text-[10px] font-bold text-[#1C1C1A] block mb-2 tracking-widest uppercase">Transcript</label>
+            <textarea value={text} onChange={e=>setText(e.target.value)} rows={9}
+              placeholder="Paste your full session transcript here..."
+              className="w-full bg-[#F6F3F1] border border-[#E5E2E0] px-4 py-3 text-sm text-[#1C1C1A] outline-none focus:border-[#FF6E13] transition-colors resize-none"/>
+          </div>
+
+          {err && <div className="bg-[#FFDAD6] text-[#93000A] text-xs p-3 mb-4">{err}</div>}
+
+          {result && !applied && (
+            <div className={`p-6 mb-5 border-l-2 ${matched?'border-[#71E002] bg-[#F6F3F1]':'border-[#B2B2B2] bg-[#F0EDEB]'}`}>
+              <div className={`text-xs font-bold mb-4 ${matched?'text-[#71E002]':'text-[#B2B2B2]'}`}>
+                {matched ? `✓ Analysis Complete — matched to ${matched.id} · ${matched.shortTitle}` : '✓ Analysis Complete — module not matched'}
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-xs mb-4">
+                <div><span className="text-[#B2B2B2]">Module: </span><span className="text-[#1C1C1A] font-bold">{result.moduleCode} ({result.moduleId})</span></div>
+                <div><span className="text-[#B2B2B2]">Date: </span><span className="text-[#1C1C1A] font-bold">{result.date}</span></div>
+                <div><span className="text-[#B2B2B2]">Instructor: </span><span className="text-[#1C1C1A] font-bold">{result.instructorName}</span></div>
+                <div><span className="text-[#B2B2B2]">Duration: </span><span className="text-[#1C1C1A] font-bold">{result.actualDuration}</span></div>
+                {result.participants?.length>0 && <div className="col-span-2"><span className="text-[#B2B2B2]">Participants: </span><span className="text-[#1C1C1A]">{result.participants.map(p=>p.name).join(', ')}</span></div>}
+                {result.topTopics?.length>0 && <div className="col-span-2"><span className="text-[#B2B2B2]">Top Topics: </span><span className="text-[#1C1C1A]">{result.topTopics.join(', ')}</span></div>}
+              </div>
+              {matched ? (
+                <button onClick={apply}
+                  className="bg-[#FF6E13] text-white text-xs font-bold px-6 py-2.5 hover:bg-[#E55A00] transition-colors">
+                  Apply to Module {matched.id}
+                </button>
+              ) : (
+                <p className="text-[#B2B2B2] text-xs">Could not match to an existing module. Check the module ID in the transcript.</p>
+              )}
+            </div>
+          )}
+
+          {applied && (
+            <div className="bg-[#F6F3F1] border-l-2 border-[#71E002] p-6 mb-5">
+              <div className="text-[#71E002] text-xs font-bold mb-2">✓ Module Updated & Saved to GitHub</div>
+              <p className="text-[#594137] text-xs">{matched?.id} has been updated with session data, participant scores, and Q&A log — and synced to the repository.</p>
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <button onClick={analyze} disabled={loading}
+              className={`flex-1 text-white text-xs font-bold py-3 transition-colors ${loading?'bg-[#FF6E1370] cursor-not-allowed':'bg-[#FF6E13] hover:bg-[#E55A00]'}`}>
+              {loading ? 'Analyzing transcript…' : 'Analyze Transcript'}
+            </button>
+            <button onClick={onClose} className="px-6 py-3 text-xs font-bold text-[#1C1C1A] bg-[#E5E2E0] hover:bg-[#D4D4D0] transition-colors">Close</button>
+          </div>
+
+          <div className="mt-6 bg-[#F0EDEB] p-5">
+            <div className="text-[#594137] text-[10px] font-bold mb-2 tracking-widest uppercase">Primary Workflow</div>
+            <p className="text-[#594137] text-xs leading-relaxed">Post session transcripts directly in the Quartile Academy chat conversation. Claude will analyze the content, match the module ID, and auto-populate all fields — including student scores, Q&A log, and follow-up items — without opening this modal.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── APP ──────────────────────────────────────────────────────────────────────
+function App() {
+  const [page, setPage] = useState('dashboard');
+  const [modules, setModules] = useState([]);
+  const [instructors, setInstructors] = useState(DEFAULT_INSTRUCTORS);
+  const [studentsBase, setStudentsBase] = useState(DEFAULT_STUDENTS);
+  const [weekly, setWeekly] = useState(DEFAULT_WEEKLY);
+  const [selectedModId, setSelectedModId] = useState(null);
+  const [showTranscript, setShowTranscript] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [syncStatus, setSyncStatus] = useState('loading');
+  const [showSettings, setShowSettings] = useState(false);
+  const ghShaRef = useRef(null);
+
+  // Load from GitHub on mount
+  useEffect(() => {
+    if (!localStorage.getItem(LS_TOKEN_KEY)) {
+      // No token yet — show settings and use defaults
+      setSyncStatus('offline');
+      setShowSettings(true);
+      return;
+    }
+    ghLoad()
+      .then(result => {
+        if (result) {
+          const d = result.data;
+          if (d.modules)      setModules(d.modules);
+          if (d.instructors)  setInstructors(d.instructors);
+          if (d.studentsBase) setStudentsBase(d.studentsBase);
+          if (d.weekly)       setWeekly(d.weekly);
+          ghShaRef.current = result.sha;
+        }
+        setSyncStatus('ready');
+      })
+      .catch(() => {
+        setSyncStatus('offline');
+      });
+  }, []);
+
+  const saveToGitHub = useCallback(async (updatedModules, updatedInstructors, updatedStudents, updatedWeekly) => {
+    setSyncStatus('saving');
+    try {
+      const newSha = await ghSave(
+        {
+          modules:      updatedModules      || modules,
+          instructors:  updatedInstructors  || instructors,
+          studentsBase: updatedStudents     || studentsBase,
+          weekly:       updatedWeekly       || weekly,
+        },
+        ghShaRef.current
+      );
+      ghShaRef.current = newSha;
+      setSyncStatus('saved');
+      setTimeout(() => setSyncStatus('ready'), 2500);
+    } catch(e) {
+      setSyncStatus('error');
+      setTimeout(() => setSyncStatus('ready'), 3000);
+    }
+  }, [modules, instructors, studentsBase, weekly]);
+
+  const handleUpdateModule = useCallback((id, updates) => {
+    setModules(prev => {
+      const updated = prev.map(m => m.id===id ? { ...m, ...updates } : m);
+      saveToGitHub(updated, null, null, null);
+      return updated;
+    });
+    setToast(`${id} updated and saved to GitHub`);
+  }, [saveToGitHub]);
+
+  const selectedMod = modules.find(m => m.id===selectedModId) || null;
+
+  return (
+    <div className="flex min-h-screen">
+      <Sidebar page={page} onNav={p=>{ setPage(p); setSelectedModId(null); }}/>
+      <div className="flex flex-col flex-1 min-w-0 min-h-screen">
+        <TopBar
+          onUpload={()=>setShowTranscript(true)}
+          syncStatus={syncStatus}
+          onSave={()=>saveToGitHub(modules, instructors, studentsBase, weekly)}
+          onSettings={()=>setShowSettings(true)}
+        />
+        <div className="flex flex-1 overflow-hidden">
+          {syncStatus==='loading' && <LoadingScreen/>}
+          {syncStatus!=='loading' && page==='dashboard'   && <Dashboard    modules={modules} instructors={instructors} weekly={weekly} onModuleClick={m=>setSelectedModId(m.id)}/>}
+          {syncStatus!=='loading' && page==='modules'     && <ModulesPage  modules={modules} onModuleClick={m=>setSelectedModId(m.id)}/>}
+          {syncStatus!=='loading' && page==='instructors' && <InstructorsPage modules={modules} instructors={instructors}/>}
+          {syncStatus!=='loading' && page==='students'    && <StudentsPage studentsBase={studentsBase}/>}
+          {syncStatus!=='loading' && page==='calendar'    && <CalendarPage instructors={instructors}/>}
+        </div>
+      </div>
+
+      {selectedMod && (
+        <ModuleModal m={selectedMod} onClose={()=>setSelectedModId(null)}/>
+      )}
+
+      {showTranscript && (
+        <TranscriptModal
+          onClose={()=>setShowTranscript(false)}
+          modules={modules}
+          onUpdateModule={(id, updates)=>{ handleUpdateModule(id, updates); setShowTranscript(false); }}
+        />
+      )}
+
+      {showSettings && (
+        <SettingsModal
+          onClose={()=>setShowSettings(false)}
+          onSaved={()=>{ setSyncStatus('loading'); window.location.reload(); }}
+        />
+      )}
+
+      {toast && <Toast key={toast+Date.now()} msg={toast} onDone={()=>setToast(null)}/>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
